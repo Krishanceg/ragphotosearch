@@ -1,0 +1,10 @@
+# secrets -- never commit
+.env
+
+# generated / large
+photo_db/
+uploads/
+test_photos/
+__pycache__/
+*.pyc
+server.log

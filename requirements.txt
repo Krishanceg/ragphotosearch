@@ -1,0 +1,22 @@
+# Core: turns images + text into vectors (the AI "brain")
+open_clip_torch
+torch
+torchvision
+pillow
+
+# Vector database: stores & searches the vectors (free, local)
+chromadb
+
+# For downloading sample photos
+requests
+
+# Web UI (Phase 2): serves the search page + API in your browser
+fastapi
+uvicorn
+python-multipart       # file uploads
+
+# Login / accounts (MongoDB backend)
+pymongo                # talk to MongoDB
+dnspython              # required for mongodb+srv:// Atlas URIs
+bcrypt                 # password hashing
+itsdangerous           # signs session cookies (used by SessionMiddleware)
