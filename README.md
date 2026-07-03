@@ -93,8 +93,27 @@ similarity scores. (Set a different port with `PORT=9000 python app.py`.)
 embedded and searchable instantly. Uploaded files are saved in `uploads/`. (Bulk-adding a
 whole folder is still fastest via `python ingest.py "C:/path/to/folder"`.)
 
+## Phase 3 — Multimodal RAG (ask questions about your photos)
+
+This is the **generation** half that makes it true Multimodal RAG: retrieve the most
+relevant photos for a question, then feed those images to a vision model
+(**Claude Opus 4.8**) that answers grounded on what's actually in them.
+
+```
+question -> nearest photos (retrieval) -> photos + question -> Claude (generation) -> answer
+```
+
+- In the UI, use the **Ask AI** box ("what animals are in my library?").
+- Endpoint: `GET /api/ask?q=...` → `{answer, used:[photos], message}`.
+- Code: [rag.py](rag.py) (`generate(question, image_paths)`) + `/api/ask` in [app.py](app.py).
+- **Requires an Anthropic API key** — add it to `.env`:
+  ```
+  ANTHROPIC_API_KEY=sk-ant-...
+  ```
+  Without the key, everything else (login, search, upload) still runs for free; the
+  Ask feature just reports that the key isn't set.
+
 ## What's next (later phases)
 
-- **Phase 2+:** metadata filters (date/location from EXIF), image-to-image search
-- **Phase 3 (true RAG):** feed top results into a vision model to caption / answer questions
-  about your photos
+- Metadata filters (date/location from EXIF), auto-captioning, find-duplicates
+- Per-user private photo libraries

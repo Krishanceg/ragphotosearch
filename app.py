@@ -25,6 +25,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from clip_model import embed_text, embed_image
 import auth
+import rag
 
 DB_DIR = "photo_db"
 COLLECTION = "photos"
@@ -165,6 +166,38 @@ def api_search(request: Request, q: str, top: int = 12, min_score: float = 0.21)
         message = (f'No photos clearly match "{q}". '
                    f'Try different wording, or lower the match strength.')
     return {"query": q, "results": results, "message": message}
+
+
+@app.get("/api/ask")
+def api_ask(request: Request, q: str, top: int = 4):
+    """
+    MULTIMODAL RAG: retrieve the most relevant photos for the question, then feed
+    them to a vision model that answers grounded on what's actually in them.
+    """
+    require_api_user(request)
+    if not rag.is_enabled():
+        return {"answer": None, "used": [],
+                "message": "AI answers are off. Add ANTHROPIC_API_KEY to .env to enable them."}
+
+    col = _collection()
+    if col.count() == 0:
+        return {"answer": None, "used": [], "message": "No photos yet. Upload some first."}
+
+    # 1) RETRIEVE: nearest photos to the question
+    qvec = embed_text(f"a photo of {q}")
+    res = col.query(query_embeddings=[qvec], n_results=min(col.count(), top))
+    paths = [p for p in res["ids"][0] if os.path.isfile(p)]
+    if not paths:
+        return {"answer": None, "used": [], "message": "Couldn't find any matching photos."}
+
+    # 2) GENERATE: vision model answers grounded on those photos
+    try:
+        answer, used = rag.generate(q, paths)
+    except Exception as e:
+        return {"answer": None, "used": [], "message": f"Generation failed: {e}"}
+
+    used_meta = [{"path": p, "filename": os.path.basename(p)} for p in used]
+    return {"answer": answer, "used": used_meta, "message": None}
 
 
 @app.get("/image")
@@ -331,6 +364,15 @@ HTML_PAGE = """
   <a onclick="run('a person in nature')">a person in nature</a>
 </div>
 
+<div style="max-width:760px; margin:6px auto 0; padding:12px 24px;">
+  <div style="display:flex; gap:8px;">
+    <input id="ask" placeholder='Ask about your photos: "what animals are in my library?"'
+           style="flex:1; padding:11px 13px; border-radius:10px; border:1px solid #333; background:#181b22; color:#fff; font-size:14px;">
+    <button id="askBtn" style="padding:11px 18px; border:0; border-radius:10px; background:#c68a3a; color:#fff; cursor:pointer;">Ask AI</button>
+  </div>
+  <div id="answer" style="margin-top:10px;"></div>
+</div>
+
 <div id="status" class="hint">Enter a query to search your photo library.</div>
 <div id="grid" class="grid"></div>
 
@@ -379,6 +421,38 @@ async function run(text){
 }
 go.onclick = () => run();
 q.addEventListener('keydown', e => { if(e.key === 'Enter') run(); });
+
+// ---- Ask AI (Multimodal RAG) ----
+const ask = document.getElementById('ask');
+const askBtn = document.getElementById('askBtn');
+const answer = document.getElementById('answer');
+
+async function runAsk(){
+  const question = ask.value.trim();
+  if(!question) return;
+  askBtn.disabled = true;
+  answer.innerHTML = '<div style="color:#8a8f98;">Reading your photos…</div>';
+  try {
+    const r = await fetch('/api/ask?q=' + encodeURIComponent(question));
+    if(r.status === 401){ location = '/login'; return; }
+    const d = await r.json();
+    if(d.answer){
+      const thumbs = (d.used||[]).map(u =>
+        '<img src="/image?id=' + encodeURIComponent(u.path) + '" title="' + u.filename +
+        '" style="width:70px;height:70px;object-fit:cover;border-radius:8px;margin:4px 4px 0 0;">').join('');
+      answer.innerHTML =
+        '<div style="background:#181b22;border:1px solid #2a2f3a;border-radius:12px;padding:14px;">' +
+        '<div style="white-space:pre-wrap;">' + d.answer + '</div>' +
+        '<div style="margin-top:8px;">' + thumbs + '</div>' +
+        '<div style="color:#666;font-size:12px;margin-top:6px;">answer grounded on the photos above</div></div>';
+    } else {
+      answer.innerHTML = '<div style="color:#f0a868;">' + (d.message || 'No answer.') + '</div>';
+    }
+  } catch(e){ answer.innerHTML = '<div style="color:#ff9aa6;">Error: ' + e + '</div>'; }
+  askBtn.disabled = false;
+}
+askBtn.onclick = runAsk;
+ask.addEventListener('keydown', e => { if(e.key === 'Enter') runAsk(); });
 
 // ---- Add photos (upload) ----
 const addBtn = document.getElementById('addBtn');

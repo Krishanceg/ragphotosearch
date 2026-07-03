@@ -15,6 +15,9 @@ fastapi
 uvicorn
 python-multipart       # file uploads
 
+# Multimodal RAG generation layer (answer questions about retrieved photos)
+anthropic              # Claude vision model; needs ANTHROPIC_API_KEY in .env
+
 # Login / accounts (MongoDB backend)
 pymongo                # talk to MongoDB
 dnspython              # required for mongodb+srv:// Atlas URIs

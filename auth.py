@@ -40,8 +40,18 @@ if not MONGO_URI:
 _client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=8000)
 _db = _client[MONGO_DB]
 users = _db["users"]
-# usernames must be unique
-users.create_index([("username", ASCENDING)], unique=True)
+
+# Ensure usernames are unique. Do this lazily and non-fatally: if Atlas is
+# unreachable at startup (paused free cluster, network blip), the app must still
+# boot and serve pages -- auth calls will surface a clear error only when used.
+_index_ready = False
+
+
+def _ensure_index():
+    global _index_ready
+    if not _index_ready:
+        users.create_index([("username", ASCENDING)], unique=True)
+        _index_ready = True
 
 
 def create_user(username: str, password: str):
@@ -51,6 +61,7 @@ def create_user(username: str, password: str):
         return False, "Username must be at least 3 characters."
     if len(password or "") < 6:
         return False, "Password must be at least 6 characters."
+    _ensure_index()
     if users.find_one({"username": username}):
         return False, "That username is already taken."
     pw_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
